@@ -8,7 +8,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/shell-bash-1f425f?style=flat&logo=gnu-bash" alt="bash"/>
   <img src="https://img.shields.io/badge/Linux-Ubuntu_22.04+-E95420?style=flat&logo=ubuntu" alt="Ubuntu"/>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/ziwuxin1/ssh-toolkit-linux?style=flat" alt="license"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/%E6%8E%88%E6%9D%83-MIT-blue?style=flat" alt="授权"/></a>
 </p>
 
 ---
@@ -58,6 +58,6 @@ sudo bash ssh-toolkit.sh counter-rescue  # Counter 救援
 sudo bash ssh-toolkit.sh restore         # 一键恢复
 ```
 
-## License
+## 授权
 
 [MIT](LICENSE)
