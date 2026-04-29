@@ -49,15 +49,6 @@ curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/ssh
 99) Uninstall(数据库保留)
 ```
 
-## Non-interactive
-
-```bash
-sudo bash ssh-toolkit.sh status          # 健康体检
-sudo bash ssh-toolkit.sh checkpoint      # 立刻 checkpoint
-sudo bash ssh-toolkit.sh counter-rescue  # Counter 救援
-sudo bash ssh-toolkit.sh restore         # 一键恢复
-```
-
 ## 授权
 
 [MIT](LICENSE)
