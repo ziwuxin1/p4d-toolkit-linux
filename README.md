@@ -16,7 +16,7 @@
 ## Quick start / 快速开始
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/ssh-toolkit.sh -o ssh-toolkit.sh && sudo bash ssh-toolkit.sh
+curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/scripts/install/ssh-toolkit.sh -o ssh-toolkit.sh && sudo bash ssh-toolkit.sh
 ```
 
 进菜单后选 **5)一次性全部部署** — 5 分钟从空白 Ubuntu 到生产就绪。
