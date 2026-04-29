@@ -15,27 +15,32 @@
 
 ## Quick start / 快速开始
 
-> **前置准备**:把这两个文件先放到 Ubuntu 的 `/root/` 目录里(scp 上传):
-> - `helix-core-server-2024.1.tgz` — 服务安装包
-> - `license` — license 文件
->
-> 脚本不会从公网下载,完全离线安装。
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/src/linux/install/ssh-toolkit.sh -o ssh-toolkit.sh && sudo bash ssh-toolkit.sh
 ```
 
-进菜单后选 **5)一次性全部部署** — 5 分钟从空白 Ubuntu 到生产就绪。
+**菜单选项 0** 会自动:
+- 创建工作目录 `/root/P4_Temp/{Install_Temp, Root_Temp}`
+- 从 GitHub 下载 server tgz 到 `Install_Temp/`
+
+之后**手动**准备:
+- `license` 文件 → 放到 `/root/P4_Temp/Install_Temp/license`
+- 迁移数据(depot 物理文件 / checkpoint / journal)→ 放到 `/root/P4_Temp/Root_Temp/`
+
+都准备好后选 **5)一次性全部部署** 一气呵成。
 
 ## Menu / 菜单
 
 ```
+── 准备 ──
+0) 一键创建工作目录 + 下载安装包
+
 ── 部署 ──
 1) 安装服务
 2) 装 授权 文件
 3) 配 systemd + 启动自愈 hook
 4) 配每日 03:00 checkpoint cron + rsync
-5) 一次性全部部署
+5) 一次性全部部署 (0→1→2→3→4)
 
 ── 救援 ──
 6) Counter 救援

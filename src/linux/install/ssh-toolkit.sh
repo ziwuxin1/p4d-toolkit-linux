@@ -33,6 +33,14 @@ readonly P4_BIN_DIR_DEFAULT="/opt/perforce/bin"
 readonly BACKUP_DIR_DEFAULT="/opt/perforce/backups"
 readonly DEPOT_BACKUP_DIR_DEFAULT="/mnt/backup/depots"
 
+# 工作空间(放在 root 家目录下,统一管理安装包 / license / 迁移数据)
+readonly WORK_DIR_DEFAULT="/root/P4_Temp"
+readonly INSTALL_TEMP_DEFAULT="${WORK_DIR_DEFAULT}/Install_Temp"
+readonly ROOT_TEMP_DEFAULT="${WORK_DIR_DEFAULT}/Root_Temp"
+
+# 安装包来源(GitHub raw),你把 tgz 上传到 dist/ 目录后这个 URL 才有效
+readonly P4D_TGZ_URL_TEMPLATE="https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/dist/server-%s.tgz"
+
 # Config file (loaded if present, written by deploy steps)
 readonly CONFIG_FILE="/etc/ssh-toolkit.conf"
 
@@ -134,9 +142,14 @@ load_config() {
     P4_BIN_DIR="${P4_BIN_DIR:-$P4_BIN_DIR_DEFAULT}"
     BACKUP_DIR="${BACKUP_DIR:-$BACKUP_DIR_DEFAULT}"
     DEPOT_BACKUP_DIR="${DEPOT_BACKUP_DIR:-$DEPOT_BACKUP_DIR_DEFAULT}"
+    WORK_DIR="${WORK_DIR:-$WORK_DIR_DEFAULT}"
+    INSTALL_TEMP="${INSTALL_TEMP:-$INSTALL_TEMP_DEFAULT}"
+    ROOT_TEMP="${ROOT_TEMP:-$ROOT_TEMP_DEFAULT}"
     P4D_BIN="${P4D_BIN_DIR}/p4d"
     P4_BIN="${P4_BIN_DIR}/p4"
     P4D_ADMIN_PASSWD_FILE="/opt/perforce/.p4_admin_passwd"
+    # shellcheck disable=SC2059
+    P4D_TGZ_URL="$(printf "$P4D_TGZ_URL_TEMPLATE" "$P4D_VERSION")"
 
     if [[ -f "$CONFIG_FILE" ]]; then
         # shellcheck disable=SC1090
@@ -240,6 +253,40 @@ print_header() {
 #  STEP IMPLEMENTATIONS — 部署
 # ============================================================
 
+step_prepare_workspace() {
+    section "一键创建工作目录 + 下载安装包"
+
+    info "工作根目录: $WORK_DIR"
+    mkdir -p "$INSTALL_TEMP" "$ROOT_TEMP"
+    chmod 700 "$WORK_DIR"
+    ok "已创建:"
+    printf "    %s/Install_Temp/   ← 安装包 + license\n" "$WORK_DIR"
+    printf "    %s/Root_Temp/      ← 迁移数据 (depot / checkpoint / journal)\n" "$WORK_DIR"
+
+    # 下载 server tgz 到 Install_Temp(已存在则跳过)
+    local tgz="${INSTALL_TEMP}/server-${P4D_VERSION}.tgz"
+    if [[ -f "$tgz" ]]; then
+        ok "安装包已存在: $tgz ($(du -h "$tgz" | cut -f1)),跳过下载"
+    else
+        info "从 GitHub 下载: $P4D_TGZ_URL"
+        if curl -fsSL --progress-bar -o "$tgz" "$P4D_TGZ_URL"; then
+            ok "下载完成: $tgz ($(du -h "$tgz" | cut -f1))"
+        else
+            err "下载失败 — 请确认 dist/server-${P4D_VERSION}.tgz 已上传到 GitHub repo"
+            err "URL: $P4D_TGZ_URL"
+            rm -f "$tgz"
+            return 1
+        fi
+    fi
+
+    echo
+    info "下一步,你需要 手动 准备这两类文件:"
+    printf "  • 把 ${C_BOLD}license${C_RESET} 文件复制到 ${INSTALL_TEMP}/license\n"
+    printf "  • 把 ${C_BOLD}迁移数据${C_RESET}(depot / checkpoint.* / journal.*)放到 ${ROOT_TEMP}/\n"
+    echo
+    info "都准备好之后,菜单里继续选 1) 安装 P4D 等步骤"
+}
+
 step_install_p4d() {
     section "全新安装 P4D ${P4D_VERSION}"
     if p4d_installed; then
@@ -247,15 +294,14 @@ step_install_p4d() {
         confirm "覆盖安装?" || return 0
     fi
 
-    # 强制使用 /root 下的本地 tgz,不从公网下载
-    local tgz="/root/helix-core-server-${P4D_VERSION}.tgz"
+    # 必须先跑过 step_prepare_workspace
+    local tgz="${INSTALL_TEMP}/server-${P4D_VERSION}.tgz"
     if [[ ! -f "$tgz" ]]; then
         err "未找到安装包: $tgz"
-        info "请先把 helix-core-server-${P4D_VERSION}.tgz 复制到 /root/ 再重试"
-        info "示例: scp helix-core-server-${P4D_VERSION}.tgz root@<host>:/root/"
+        info "请先在菜单选 0) 一键创建工作目录 + 下载安装包"
         return 1
     fi
-    info "找到本地安装包: $tgz ($(du -h "$tgz" | cut -f1))"
+    info "使用安装包: $tgz ($(du -h "$tgz" | cut -f1))"
 
     local tmp="/tmp/p4d_install"
     rm -rf "$tmp"
@@ -301,15 +347,14 @@ step_install_p4d() {
 step_install_license() {
     section "安装 License 文件"
 
-    # 强制使用 /root/license,不接受 paste 输入
-    local src="/root/license"
+    local src="${INSTALL_TEMP}/license"
     if [[ ! -f "$src" ]]; then
         err "未找到 license 文件: $src"
-        info "请先把 license 文件复制到 /root/license 再重试"
-        info "示例: scp license root@<host>:/root/license"
+        info "请先把 license 文件复制到 ${INSTALL_TEMP}/license"
+        info "示例: scp license root@<host>:${INSTALL_TEMP}/"
         return 1
     fi
-    info "找到本地 license 文件: $src ($(stat -c%s "$src") bytes)"
+    info "找到 license 文件: $src ($(stat -c%s "$src") bytes)"
 
     info "复制到 $P4ROOT/license"
     install -m 644 -o "$P4D_USER" -g "$P4D_USER" "$src" "$P4ROOT/license"
@@ -487,8 +532,15 @@ step_counter_rescue() {
 
 step_one_click_restore() {
     section "🚀 一键恢复"
+    # 优先从 Root_Temp 找(全新部署 / 迁移场景),没有则用 BACKUP_DIR(日常 cron 输出)
+    local SOURCE_DIR
+    if [[ -d "$ROOT_TEMP" ]] && ls "$ROOT_TEMP"/checkpoint.* >/dev/null 2>&1; then
+        SOURCE_DIR="$ROOT_TEMP"
+    else
+        SOURCE_DIR="$BACKUP_DIR"
+    fi
     info "从备份目录还原:找最新 checkpoint + 后续 journal,做完整 replay"
-    info "  备份目录: $BACKUP_DIR"
+    info "  来源目录: $SOURCE_DIR"
     confirm "继续?" || return 0
 
     if ! require_confirm_text "这会覆盖当前 db.* — 输入 CONFIRM 继续: " "CONFIRM"; then
@@ -497,18 +549,18 @@ step_one_click_restore() {
 
     # 1. Find latest checkpoint
     local latest_ckpt latest_num
-    latest_ckpt="$(ls -1 "$BACKUP_DIR"/checkpoint.* 2>/dev/null | grep -v '\.md5$' | grep -v '\.gz$' | sort -V | tail -1 || true)"
+    latest_ckpt="$(ls -1 "$SOURCE_DIR"/checkpoint.* 2>/dev/null | grep -v '\.md5$' | grep -v '\.gz$' | sort -V | tail -1 || true)"
     if [[ -z "$latest_ckpt" ]]; then
         # try .gz
-        latest_ckpt="$(ls -1 "$BACKUP_DIR"/checkpoint.*.gz 2>/dev/null | sort -V | tail -1 || true)"
+        latest_ckpt="$(ls -1 "$SOURCE_DIR"/checkpoint.*.gz 2>/dev/null | sort -V | tail -1 || true)"
     fi
-    [[ -z "$latest_ckpt" ]] && die "在 $BACKUP_DIR 没找到 checkpoint.* 文件"
+    [[ -z "$latest_ckpt" ]] && die "在 $SOURCE_DIR 没找到 checkpoint.* 文件"
     latest_num="$(basename "$latest_ckpt" | sed -E 's/^checkpoint\.([0-9]+).*/\1/')"
     info "最新 checkpoint: $latest_ckpt (#$latest_num)"
 
     # 2. Find journals N >= latest_num
     local journals=()
-    for f in "$BACKUP_DIR"/journal.[0-9]*; do
+    for f in "$SOURCE_DIR"/journal.[0-9]*; do
         [[ -e "$f" ]] || continue
         local n
         n="$(basename "$f" | sed -E 's/^journal\.([0-9]+).*/\1/')"
@@ -517,6 +569,18 @@ step_one_click_restore() {
         fi
     done
     info "需要 replay 的 journal 数: ${#journals[@]}"
+
+    # 镜像 depot 物理文件(若 SOURCE_DIR 包含 depot 子目录)
+    local depots=()
+    while IFS= read -r d; do
+        local name; name="$(basename "$d")"
+        [[ "$name" =~ ^\. ]] && continue
+        [[ "$name" == "server.locks" ]] && continue
+        depots+=("$d")
+    done < <(find "$SOURCE_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+    if (( ${#depots[@]} > 0 )); then
+        info "发现 ${#depots[@]} 个 depot 子目录,稍后镜像到 $P4ROOT"
+    fi
 
     # 3. Stop service
     info "停止服务"
@@ -530,6 +594,18 @@ step_one_click_restore() {
     chown "$P4D_USER:$P4D_USER" "$snap"
     find "$P4ROOT" -maxdepth 1 -name "db.*" -exec cp -p {} "$snap/" \;
     find "$P4ROOT" -maxdepth 1 -name "db.*" -delete
+
+    # 4.5 Mirror depot physical files into P4ROOT (if any)
+    if (( ${#depots[@]} > 0 )); then
+        for src in "${depots[@]}"; do
+            local name; name="$(basename "$src")"
+            local lower; lower="$(echo "$name" | tr '[:upper:]' '[:lower:]')"
+            info "  镜像 $name → $P4ROOT/$lower"
+            mkdir -p "$P4ROOT/$lower"
+            cp -a "$src/." "$P4ROOT/$lower/"
+        done
+        chown -R "$P4D_USER:$P4D_USER" "$P4ROOT"
+    fi
 
     # 5. Apply checkpoint (auto-detect .gz)
     info "Replay $latest_ckpt"
@@ -710,12 +786,15 @@ main_menu() {
         print_header
         cat <<MENU
 
+  ${C_BOLD}── 准备 ──${C_RESET}
+  0) 一键创建工作目录 + 下载安装包(创建 /root/P4_Temp 并从 GitHub 拉 tgz)
+
   ${C_BOLD}── 部署 ──${C_RESET}
   1) 全新安装 P4D ${P4D_VERSION}
   2) 装 license 文件
   3) 配 systemd + 启动自愈 hook
   4) 配每日 03:00 checkpoint cron
-  5) 一次性全部部署 (1→2→3→4)
+  5) 一次性全部部署 (0→1→2→3→4)
 
   ${C_BOLD}── 救援 ──${C_RESET}
   6) Counter 救援 (license 炸了用)
@@ -736,18 +815,19 @@ main_menu() {
   ${C_BOLD}── 危险区 ──${C_RESET}
   99) 卸载 P4D + Toolkit
 
-  0) 退出
+  q) 退出
 
 MENU
         local choice
         read -r -p "$(printf "${C_CYAN}选择: ${C_RESET}")" choice
         echo
         case "$choice" in
+            0)  step_prepare_workspace ;;
             1)  step_install_p4d ;;
             2)  step_install_license ;;
             3)  step_setup_systemd_with_rescue ;;
             4)  step_setup_cron_checkpoint ;;
-            5)  step_install_p4d && step_install_license && step_setup_systemd_with_rescue && step_setup_cron_checkpoint ;;
+            5)  step_prepare_workspace && step_install_p4d && step_install_license && step_setup_systemd_with_rescue && step_setup_cron_checkpoint ;;
             6)  step_counter_rescue ;;
             7)  step_one_click_restore ;;
             10) step_health_check ;;
@@ -759,7 +839,7 @@ MENU
             16) systemctl stop  "$SVC_NAME" && ok "已停止" ;;
             17) systemctl restart "$SVC_NAME" && ok "已重启" ;;
             99) step_uninstall ;;
-            0|q|exit) ok "再见"; exit 0 ;;
+            q|exit) ok "再见"; exit 0 ;;
             *) err "未知选项: $choice" ;;
         esac
         echo
