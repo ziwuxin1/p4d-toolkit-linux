@@ -1,14 +1,13 @@
 <h1 align="center">SSH Toolkit (Linux)</h1>
 
 <p align="center">
-  <b>One-click bash script for Perforce P4D on Ubuntu — deploy, rescue, and self-heal.</b><br/>
-  <sub>Perforce P4D 一键运维脚本 — 部署 / 救援 / 自动自愈(Ubuntu)</sub>
+  <b>One-click bash script for Linux server deployment, rescue, and self-heal.</b><br/>
+  <sub>Linux 服务器一键运维脚本 — 部署 / 救援 / 自动自愈(Ubuntu)</sub>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/shell-bash-1f425f?style=flat&logo=gnu-bash" alt="bash"/>
   <img src="https://img.shields.io/badge/Linux-Ubuntu_22.04+-E95420?style=flat&logo=ubuntu" alt="Ubuntu"/>
-  <img src="https://img.shields.io/badge/P4D-2024.1-2EBC4F?style=flat" alt="P4D 2024.1"/>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/ziwuxin1/ssh-toolkit-linux?style=flat" alt="license"/></a>
 </p>
 
@@ -26,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/ssh
 
 ```
 ── 部署 ──
-1) 安装 P4D 2024.1
+1) 安装服务
 2) 装 license 文件
 3) 配 systemd + 启动自愈 hook
 4) 配每日 03:00 checkpoint cron + rsync
@@ -61,4 +60,4 @@ sudo bash ssh-toolkit.sh restore         # 一键恢复
 
 ## License
 
-[MIT](LICENSE) · 100% based on [P4D-Migration-Complete-Guide.md](P4D-Migration-Complete-Guide.md)
+[MIT](LICENSE)
