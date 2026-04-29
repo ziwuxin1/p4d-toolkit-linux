@@ -1,0 +1,7 @@
+# Bash scripts MUST use LF — CRLF breaks bash on Linux
+*.sh text eol=lf
+
+# Other text files preserve native line endings
+*.md text
+*.txt text
+LICENSE text
