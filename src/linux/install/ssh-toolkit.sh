@@ -247,17 +247,22 @@ step_install_p4d() {
         confirm "覆盖安装?" || return 0
     fi
 
-    local tmp="/tmp/p4d_install"
-    mkdir -p "$tmp"
-    local url="https://ftp.perforce.com/perforce/r${P4D_VERSION%.*}.${P4D_VERSION#*.}/bin.linux26x86_64/helix-core-server.tgz"
-
-    info "下载: $url"
-    if ! curl -fsSL -o "$tmp/helix-core-server.tgz" "$url"; then
-        die "下载失败。检查网络 / URL: $url"
+    # 强制使用 /root 下的本地 tgz,不从公网下载
+    local tgz="/root/helix-core-server-${P4D_VERSION}.tgz"
+    if [[ ! -f "$tgz" ]]; then
+        err "未找到安装包: $tgz"
+        info "请先把 helix-core-server-${P4D_VERSION}.tgz 复制到 /root/ 再重试"
+        info "示例: scp helix-core-server-${P4D_VERSION}.tgz root@<host>:/root/"
+        return 1
     fi
+    info "找到本地安装包: $tgz ($(du -h "$tgz" | cut -f1))"
+
+    local tmp="/tmp/p4d_install"
+    rm -rf "$tmp"
+    mkdir -p "$tmp"
 
     info "解压并安装"
-    tar xzf "$tmp/helix-core-server.tgz" -C "$tmp"
+    tar xzf "$tgz" -C "$tmp"
     mkdir -p "$P4D_BIN_DIR" "$P4_BIN_DIR"
     install -m 755 "$tmp/p4d"      "$P4D_BIN"
     install -m 755 "$tmp/p4broker" "$P4D_BIN_DIR/p4broker" || true
@@ -295,27 +300,22 @@ step_install_p4d() {
 
 step_install_license() {
     section "安装 License 文件"
-    info "License 文件路径: $P4ROOT/license"
-    info "把你的 license 文件复制到 $P4ROOT/license,或粘贴内容"
-    echo
-    echo "  1) 我已经复制好了,只验证"
-    echo "  2) 我现在 paste license 内容(Ctrl-D 结束)"
-    echo "  0) 取消"
-    local choice
-    read -r -p "选择: " choice
-    case "$choice" in
-        1) ;;
-        2)
-            info "粘贴 license 内容(Ctrl-D 结束):"
-            cat > "$P4ROOT/license"
-            chown "$P4D_USER:$P4D_USER" "$P4ROOT/license"
-            chmod 644 "$P4ROOT/license"
-            ;;
-        *) info "取消"; return 0 ;;
-    esac
+
+    # 强制使用 /root/license,不接受 paste 输入
+    local src="/root/license"
+    if [[ ! -f "$src" ]]; then
+        err "未找到 license 文件: $src"
+        info "请先把 license 文件复制到 /root/license 再重试"
+        info "示例: scp license root@<host>:/root/license"
+        return 1
+    fi
+    info "找到本地 license 文件: $src ($(stat -c%s "$src") bytes)"
+
+    info "复制到 $P4ROOT/license"
+    install -m 644 -o "$P4D_USER" -g "$P4D_USER" "$src" "$P4ROOT/license"
 
     if ! license_present; then
-        err "$P4ROOT/license 不存在"
+        err "$P4ROOT/license 不存在(复制失败)"
         return 1
     fi
 

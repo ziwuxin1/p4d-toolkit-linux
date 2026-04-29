@@ -15,6 +15,12 @@
 
 ## Quick start / 快速开始
 
+> **前置准备**:把这两个文件先放到 Ubuntu 的 `/root/` 目录里(scp 上传):
+> - `helix-core-server-2024.1.tgz` — 服务安装包
+> - `license` — license 文件
+>
+> 脚本不会从公网下载,完全离线安装。
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/src/linux/install/ssh-toolkit.sh -o ssh-toolkit.sh && sudo bash ssh-toolkit.sh
 ```
