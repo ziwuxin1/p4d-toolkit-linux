@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/shell-bash-1f425f?style=flat&logo=gnu-bash" alt="bash"/>
   <img src="https://img.shields.io/badge/Linux-Ubuntu_22.04+-E95420?style=flat&logo=ubuntu" alt="Ubuntu"/>
   <img src="https://img.shields.io/badge/P4D-2024.1-2EBC4F?style=flat" alt="P4D 2024.1"/>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/ziwuxin1/p4d-toolkit-linux?style=flat" alt="license"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ziwuxin1/ssh-toolkit-linux?style=flat" alt="license"/></a>
 </p>
 
 ---
@@ -21,7 +21,7 @@
 ## Quick start / 快速开始
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ziwuxin1/p4d-toolkit-linux/main/p4d-toolkit.sh -o p4d-toolkit.sh && sudo bash p4d-toolkit.sh
+curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/p4d-toolkit.sh -o p4d-toolkit.sh && sudo bash p4d-toolkit.sh
 ```
 
 进菜单后选 **5)一次性全部部署** — 5 分钟从空白 Ubuntu 到生产就绪。
