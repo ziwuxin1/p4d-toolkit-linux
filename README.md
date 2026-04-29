@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/ssh
 ```
 ── 部署 ──
 1) 安装服务
-2) 装 license 文件
+2) 装 授权 文件
 3) 配 systemd + 启动自愈 hook
 4) 配每日 03:00 checkpoint cron + rsync
 5) 一次性全部部署
