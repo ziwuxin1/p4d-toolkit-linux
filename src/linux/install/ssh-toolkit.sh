@@ -784,8 +784,15 @@ step_uninstall() {
 # ============================================================
 
 main_menu() {
+    local first_run=1
     while true; do
         print_header
+        # 第一次进菜单自动跑一次健康体检,看一眼整体状态再操作
+        if (( first_run == 1 )); then
+            step_health_check
+            first_run=0
+            echo
+        fi
         cat <<MENU
 
   ${C_BOLD}── 准备 ──${C_RESET}
