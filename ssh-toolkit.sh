@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# P4D Toolkit (Ubuntu) — 一键运维脚本
+# SSH Toolkit (Linux) — Perforce P4D 一键运维脚本
 # Version: 1.0.0
 # Target: P4D 2024.1 on Ubuntu 22.04 / 24.04
 #
 # 用法:
-#   sudo bash p4d-toolkit.sh           # 交互菜单
-#   sudo bash p4d-toolkit.sh status    # 非交互:状态
-#   sudo bash p4d-toolkit.sh checkpoint # 非交互:立刻 checkpoint
+#   sudo bash ssh-toolkit.sh           # 交互菜单
+#   sudo bash ssh-toolkit.sh status    # 非交互:状态
+#   sudo bash ssh-toolkit.sh checkpoint # 非交互:立刻 checkpoint
 #
 # 设计原则:
 #   - 100% 基于 P4D-Migration-Complete-Guide.md 那份指南
@@ -34,11 +34,11 @@ readonly BACKUP_DIR_DEFAULT="/opt/perforce/backups"
 readonly DEPOT_BACKUP_DIR_DEFAULT="/mnt/backup/depots"
 
 # Config file (loaded if present, written by deploy steps)
-readonly CONFIG_FILE="/etc/p4d-toolkit.conf"
+readonly CONFIG_FILE="/etc/ssh-toolkit.conf"
 
 # Persistent state (which deploy steps are done)
-readonly STATE_DIR="/var/lib/p4d-toolkit"
-readonly LOG_FILE="/var/log/p4d-toolkit.log"
+readonly STATE_DIR="/var/lib/ssh-toolkit"
+readonly LOG_FILE="/var/log/ssh-toolkit.log"
 
 # systemd unit + scheduled task names
 readonly SVC_NAME="p4d.service"

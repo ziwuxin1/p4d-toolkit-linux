@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/p4d-toolkit.png" alt="SSH Toolkit (Linux)" width="160"/>
-</p>
-
 <h1 align="center">SSH Toolkit (Linux)</h1>
 
 <p align="center">
@@ -21,7 +17,7 @@
 ## Quick start / 快速开始
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/p4d-toolkit.sh -o p4d-toolkit.sh && sudo bash p4d-toolkit.sh
+curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/ssh-toolkit.sh -o ssh-toolkit.sh && sudo bash ssh-toolkit.sh
 ```
 
 进菜单后选 **5)一次性全部部署** — 5 分钟从空白 Ubuntu 到生产就绪。
@@ -57,10 +53,10 @@ curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/p4d
 ## Non-interactive
 
 ```bash
-sudo bash p4d-toolkit.sh status          # 健康体检
-sudo bash p4d-toolkit.sh checkpoint      # 立刻 checkpoint
-sudo bash p4d-toolkit.sh counter-rescue  # Counter 救援
-sudo bash p4d-toolkit.sh restore         # 一键恢复
+sudo bash ssh-toolkit.sh status          # 健康体检
+sudo bash ssh-toolkit.sh checkpoint      # 立刻 checkpoint
+sudo bash ssh-toolkit.sh counter-rescue  # Counter 救援
+sudo bash ssh-toolkit.sh restore         # 一键恢复
 ```
 
 ## License
