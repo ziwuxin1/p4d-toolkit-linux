@@ -879,9 +879,9 @@ main_menu() {
 
   ${C_BOLD}── 部署 ──${C_RESET}
   1) 全新安装 P4D ${P4D_VERSION}
-  2) 装 license 文件
-  3) 配 systemd + 启动自愈 hook
-  4) 配每日 03:00 checkpoint cron
+  2) 安装 license 文件
+  3) 配置 systemd 服务 + 启动自愈 hook
+  4) 配置每日 03:00 checkpoint cron 备份
   5) 一次性全部部署 (0→1→2→3→4)
 
   ${C_BOLD}── 救援 ──${C_RESET}

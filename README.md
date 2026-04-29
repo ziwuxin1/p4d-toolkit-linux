@@ -36,10 +36,10 @@ curl -fsSL https://raw.githubusercontent.com/ziwuxin1/ssh-toolkit-linux/main/src
 0) 一键创建工作目录 + 下载安装包
 
 ── 部署 ──
-1) 安装服务
-2) 装 授权 文件
-3) 配 systemd + 启动自愈 hook
-4) 配每日 03:00 checkpoint cron + rsync
+1) 全新安装服务
+2) 安装授权文件
+3) 配置 systemd 服务 + 启动自愈 hook
+4) 配置每日 03:00 checkpoint cron 备份
 5) 一次性全部部署 (0→1→2→3→4)
 
 ── 救援 ──
