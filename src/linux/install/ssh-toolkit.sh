@@ -33,6 +33,11 @@ readonly P4_BIN_DIR_DEFAULT="/opt/perforce/bin"
 readonly BACKUP_DIR_DEFAULT="/opt/perforce/backups"
 readonly DEPOT_BACKUP_DIR_DEFAULT="/mnt/backup/depots"
 
+# 方案 2:本地 checkpoint + rsync push 到 NAS(更稳)
+# NAS_BACKUP_ROOT 是 NFS 挂载点下 这台 VM 的备份根目录
+# 比如挂在 /mnt/nas/p4d-backups,VM1 的就放 /mnt/nas/p4d-backups/vm1
+readonly NAS_BACKUP_ROOT_DEFAULT="/mnt/nas/p4d-backups/vm1"
+
 # 工作空间(放在 root 家目录下,统一管理安装包 / license / 迁移数据)
 readonly WORK_DIR_DEFAULT="/root/P4_Temp"
 readonly INSTALL_TEMP_DEFAULT="${WORK_DIR_DEFAULT}/Install_Temp"
@@ -144,6 +149,7 @@ load_config() {
     P4_BIN_DIR="${P4_BIN_DIR:-$P4_BIN_DIR_DEFAULT}"
     BACKUP_DIR="${BACKUP_DIR:-$BACKUP_DIR_DEFAULT}"
     DEPOT_BACKUP_DIR="${DEPOT_BACKUP_DIR:-$DEPOT_BACKUP_DIR_DEFAULT}"
+    NAS_BACKUP_ROOT="${NAS_BACKUP_ROOT:-$NAS_BACKUP_ROOT_DEFAULT}"
     WORK_DIR="${WORK_DIR:-$WORK_DIR_DEFAULT}"
     INSTALL_TEMP="${INSTALL_TEMP:-$INSTALL_TEMP_DEFAULT}"
     ROOT_TEMP="${ROOT_TEMP:-$ROOT_TEMP_DEFAULT}"
@@ -170,6 +176,7 @@ P4D_BIN_DIR="$P4D_BIN_DIR"
 P4_BIN_DIR="$P4_BIN_DIR"
 BACKUP_DIR="$BACKUP_DIR"
 DEPOT_BACKUP_DIR="$DEPOT_BACKUP_DIR"
+NAS_BACKUP_ROOT="$NAS_BACKUP_ROOT"
 EOF
     chmod 644 "$CONFIG_FILE"
 }
@@ -450,30 +457,44 @@ EOF
 }
 
 step_setup_cron_checkpoint() {
-    section "配置每日 checkpoint cron"
+    section "配置每日 checkpoint cron(方案 2:本地 + NAS 双副本)"
     mkdir -p "$BACKUP_DIR"
     chown "$P4D_USER:$P4D_USER" "$BACKUP_DIR"
 
     cat > "$CRON_FILE" <<EOF
 # P4D Toolkit — auto-generated $(date -Iseconds)
+# 方案 2:checkpoint 先写本地 SSD,再 rsync 推到 NAS,depot 文件直接 rsync 到 NAS
 
-# 每天 03:00 生成 checkpoint (压缩 + 轮转 journal)
+# 03:00 — 生成 checkpoint 到本地 SSD (压缩 + 轮转 journal)
 0 3 * * * $P4D_USER $P4D_BIN -r $P4ROOT -jc -Z -p $BACKUP_DIR/checkpoint > $BACKUP_DIR/last.log 2>&1
 
-# 每天 04:00 rsync depot 物理文件到外置盘 (差量)
-0 4 * * * root rsync -a --delete --exclude='db.*' --exclude='journal*' --exclude='log*' $P4ROOT/ $DEPOT_BACKUP_DIR/ > $DEPOT_BACKUP_DIR/last-rsync.log 2>&1
+# 03:30 — rsync 本地 checkpoint+journal 到 NAS (metadata 副本,几秒钟)
+30 3 * * * root if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then \\
+    mkdir -p $NAS_BACKUP_ROOT/checkpoints && \\
+    rsync -a --delete $BACKUP_DIR/ $NAS_BACKUP_ROOT/checkpoints/ > $NAS_BACKUP_ROOT/checkpoints/last-rsync.log 2>&1; \\
+fi
 
-# 每周日 05:00 清理 30 天前的旧 checkpoint / journal
-0 5 * * 0 $P4D_USER find $BACKUP_DIR -name "checkpoint.*" -mtime +30 -delete
-0 5 * * 0 $P4D_USER find $BACKUP_DIR -name "journal.*"    -mtime +30 -delete
+# 04:00 — rsync depot 物理文件到 NAS (差量,跳过 db.*/journal/log)
+0 4 * * * root if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then \\
+    mkdir -p $NAS_BACKUP_ROOT/depots && \\
+    rsync -a --delete --exclude='db.*' --exclude='journal*' --exclude='log*' $P4ROOT/ $NAS_BACKUP_ROOT/depots/ > $NAS_BACKUP_ROOT/depots/last-rsync.log 2>&1; \\
+fi
+
+# 每周日 05:00 — 清理本地 14 天前的 checkpoint+journal(本地不留太久,NAS 那边长存)
+0 5 * * 0 $P4D_USER find $BACKUP_DIR -name "checkpoint.*" -mtime +14 -delete
+0 5 * * 0 $P4D_USER find $BACKUP_DIR -name "journal.*"    -mtime +14 -delete
+
+# 每周日 06:00 — 清理 NAS 上 90 天前的 checkpoint+journal
+0 6 * * 0 root [[ -d $NAS_BACKUP_ROOT/checkpoints ]] && find $NAS_BACKUP_ROOT/checkpoints -name "checkpoint.*" -mtime +90 -delete
+0 6 * * 0 root [[ -d $NAS_BACKUP_ROOT/checkpoints ]] && find $NAS_BACKUP_ROOT/checkpoints -name "journal.*"    -mtime +90 -delete
 EOF
     chmod 644 "$CRON_FILE"
     ok "cron 已配置: $CRON_FILE"
-    info "checkpoint 落地: $BACKUP_DIR"
-    info "depot 备份落地: $DEPOT_BACKUP_DIR (确保这个目录已挂载/可写)"
-
-    if [[ ! -d "$DEPOT_BACKUP_DIR" ]]; then
-        warn "$DEPOT_BACKUP_DIR 不存在 — depot rsync 会失败,请挂载备份盘"
+    info "本地 checkpoint: $BACKUP_DIR (保留 14 天)"
+    info "NAS 备份根目录: $NAS_BACKUP_ROOT (保留 90 天)"
+    if ! mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null; then
+        warn "$NAS_BACKUP_ROOT 没挂载 — rsync 那两条 cron 会跳过 (有 mountpoint 检查)"
+        info "记得配 NFS 挂载,把 NAS 共享挂到 $NAS_BACKUP_ROOT"
     fi
 }
 
@@ -688,7 +709,7 @@ step_health_check() {
         fi
     fi
 
-    # Backups
+    # 本地 checkpoint
     if [[ -d "$BACKUP_DIR" ]]; then
         local last_ckpt
         last_ckpt="$(ls -t "$BACKUP_DIR"/checkpoint.* 2>/dev/null | head -1 || true)"
@@ -696,15 +717,49 @@ step_health_check() {
             local age_h
             age_h=$(( ($(date +%s) - $(stat -c %Y "$last_ckpt")) / 3600 ))
             if (( age_h > 26 )); then
-                err "上次 checkpoint: ${age_h}h 前 (>26h,异常)"
+                err "本地上次 checkpoint: ${age_h}h 前 (>26h,异常)"
             else
-                ok "上次 checkpoint: ${age_h}h 前"
+                ok "本地上次 checkpoint: ${age_h}h 前"
             fi
         else
             warn "$BACKUP_DIR 里没有 checkpoint.* 文件"
         fi
     else
         warn "$BACKUP_DIR 不存在"
+    fi
+
+    # NAS 挂载 + 远程备份新鲜度
+    if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null; then
+        ok "NAS 挂载: $NAS_BACKUP_ROOT (NFS 活着)"
+        # 验证可写
+        local probe="$NAS_BACKUP_ROOT/.write_probe_$$"
+        if (touch "$probe" 2>/dev/null && rm -f "$probe"); then
+            ok "NAS 可写"
+        else
+            err "NAS 不可写 — 检查 NFS squash / 权限"
+        fi
+        # 远程上次 checkpoint 新鲜度
+        if [[ -d "$NAS_BACKUP_ROOT/checkpoints" ]]; then
+            local nas_last
+            nas_last="$(ls -t "$NAS_BACKUP_ROOT/checkpoints"/checkpoint.* 2>/dev/null | head -1 || true)"
+            if [[ -n "$nas_last" ]]; then
+                local age_h
+                age_h=$(( ($(date +%s) - $(stat -c %Y "$nas_last")) / 3600 ))
+                if (( age_h > 26 )); then
+                    err "NAS 上次 checkpoint: ${age_h}h 前 (>26h,rsync 失败?)"
+                else
+                    ok "NAS 上次 checkpoint: ${age_h}h 前"
+                fi
+            else
+                warn "NAS checkpoints 目录里没文件 — 还没跑过同步"
+            fi
+        else
+            info "NAS checkpoints 目录还没创建 (cron 第一次跑会建)"
+        fi
+    else
+        if [[ -n "${NAS_BACKUP_ROOT:-}" ]]; then
+            err "NAS 没挂载: $NAS_BACKUP_ROOT — 检查 fstab / 网络"
+        fi
     fi
 
     # Disk
@@ -728,15 +783,32 @@ step_health_check() {
 
 step_show_backup_status() {
     section "备份状态"
-    info "Checkpoint 目录: $BACKUP_DIR"
+    info "本地 checkpoint 目录: $BACKUP_DIR"
     if [[ -d "$BACKUP_DIR" ]]; then
-        ls -lht "$BACKUP_DIR" | head -20
+        ls -lht "$BACKUP_DIR" 2>/dev/null | head -10
+    else
+        warn "本地目录不存在"
     fi
+
     echo
-    info "Depot 备份目录: $DEPOT_BACKUP_DIR"
-    if [[ -d "$DEPOT_BACKUP_DIR" ]]; then
-        du -sh "$DEPOT_BACKUP_DIR" 2>/dev/null || true
-        ls -lh "$DEPOT_BACKUP_DIR" | head -10
+    info "NAS 备份根目录: $NAS_BACKUP_ROOT"
+    if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null; then
+        ok "  挂载状态: 已挂载 (NFS)"
+    elif [[ -d "$NAS_BACKUP_ROOT" ]]; then
+        warn "  挂载状态: 目录存在但 不是 NFS 挂载点 (可能 fstab 没生效)"
+    else
+        err "  挂载状态: 目录不存在 — NFS 没挂载"
+    fi
+
+    if [[ -d "$NAS_BACKUP_ROOT/checkpoints" ]]; then
+        echo
+        info "  NAS checkpoint 目录:"
+        ls -lht "$NAS_BACKUP_ROOT/checkpoints" 2>/dev/null | head -8
+    fi
+    if [[ -d "$NAS_BACKUP_ROOT/depots" ]]; then
+        echo
+        info "  NAS depot 目录大小: $(du -sh "$NAS_BACKUP_ROOT/depots" 2>/dev/null | cut -f1)"
+        ls -lh "$NAS_BACKUP_ROOT/depots" 2>/dev/null | head -10
     fi
 }
 
@@ -753,11 +825,18 @@ step_run_checkpoint_now() {
 }
 
 step_run_rsync_now() {
-    section "立刻 rsync depot 一次"
-    if [[ ! -d "$DEPOT_BACKUP_DIR" ]]; then
-        die "$DEPOT_BACKUP_DIR 不存在,先挂载备份盘"
+    section "立刻 rsync 到 NAS"
+    if ! mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null && [[ ! -d "$NAS_BACKUP_ROOT" ]]; then
+        die "$NAS_BACKUP_ROOT 不可达 — 先挂载 NAS NFS"
     fi
-    rsync -av --delete --exclude='db.*' --exclude='journal*' --exclude='log*' "$P4ROOT/" "$DEPOT_BACKUP_DIR/"
+    mkdir -p "$NAS_BACKUP_ROOT/checkpoints" "$NAS_BACKUP_ROOT/depots"
+
+    info "[1/2] rsync 本地 checkpoint+journal → $NAS_BACKUP_ROOT/checkpoints/"
+    rsync -av --delete "$BACKUP_DIR/" "$NAS_BACKUP_ROOT/checkpoints/" 2>&1 | tail -10
+
+    info "[2/2] rsync depot 物理文件 → $NAS_BACKUP_ROOT/depots/"
+    rsync -av --delete --exclude='db.*' --exclude='journal*' --exclude='log*' \
+        "$P4ROOT/" "$NAS_BACKUP_ROOT/depots/" 2>&1 | tail -10
     ok "完成"
 }
 
@@ -816,7 +895,7 @@ main_menu() {
 
   ${C_BOLD}── 维护 ──${C_RESET}
   13) 立刻生成 checkpoint
-  14) 立刻 rsync depot
+  14) 立刻 rsync 到 NAS (checkpoint + depot 一次推完)
   15) 启动服务
   16) 停止服务
   17) 重启服务
