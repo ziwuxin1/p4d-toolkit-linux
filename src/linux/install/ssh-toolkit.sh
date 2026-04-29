@@ -60,15 +60,17 @@ readonly CRON_FILE="/etc/cron.d/p4d-backup"
 # ============================================================
 
 if [[ -t 1 ]]; then
-    readonly C_RESET="\033[0m"
-    readonly C_BOLD="\033[1m"
-    readonly C_DIM="\033[2m"
-    readonly C_RED="\033[31m"
-    readonly C_GREEN="\033[32m"
-    readonly C_YELLOW="\033[33m"
-    readonly C_BLUE="\033[34m"
-    readonly C_MAGENTA="\033[35m"
-    readonly C_CYAN="\033[36m"
+    # ANSI-C quoting ($'…') — 必须用,普通双引号里 \033 是字面字符串,
+    # heredoc 不会解释,会原样打出 \033[1m 这种丑东西。
+    readonly C_RESET=$'\033[0m'
+    readonly C_BOLD=$'\033[1m'
+    readonly C_DIM=$'\033[2m'
+    readonly C_RED=$'\033[31m'
+    readonly C_GREEN=$'\033[32m'
+    readonly C_YELLOW=$'\033[33m'
+    readonly C_BLUE=$'\033[34m'
+    readonly C_MAGENTA=$'\033[35m'
+    readonly C_CYAN=$'\033[36m'
 else
     readonly C_RESET="" C_BOLD="" C_DIM=""
     readonly C_RED="" C_GREEN="" C_YELLOW="" C_BLUE="" C_MAGENTA="" C_CYAN=""
