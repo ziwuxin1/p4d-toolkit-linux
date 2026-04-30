@@ -1004,15 +1004,12 @@ step_uninstall() {
 # ============================================================
 
 main_menu() {
-    local first_run=1
     while true; do
         print_header
-        # 第一次进菜单自动跑一次健康体检,看一眼整体状态再操作
-        if (( first_run == 1 )); then
-            step_health_check
-            first_run=0
-            echo
-        fi
+        # 每次菜单刷新都跑一次健康体检 — 状态实时显示
+        # (原来只在首次跑,用户反馈"看不到状态变化",改成每次都跑)
+        step_health_check
+        echo
         cat <<MENU
 
   ${C_BOLD}── 准备 ──${C_RESET}
