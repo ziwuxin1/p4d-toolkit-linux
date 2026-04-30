@@ -86,6 +86,21 @@ p4 admin checkpoint
 - root SSH 访问
 - 静态局域网 IP(DHCP 静态绑定也行)
 
+### Ubuntu 怎么装?跟视频走
+
+如果你还没装好 Ubuntu,直接看这两个视频:
+
+| 视频 | 内容 |
+|------|------|
+| 📺 [PVE 9.0 系统安装与初始化全攻略](https://youtu.be/hzkM0bycv4A) | PVE 虚拟化平台装好 |
+| 📺 [手把手 PVE 安装 Ubuntu Server 24,配置 SSH 登录+Docker 环境](https://youtu.be/xa5iCt0OY5w) | PVE 上开 Ubuntu Server 24 |
+
+⚠️ 装 Ubuntu 时几个特殊注意点:
+- 用户名建议 `ubuntu` 或个人名,**不要用 `perforce`** (toolkit 会自动建 perforce 系统用户会冲突)
+- ☑ 装 OpenSSH Server (远程管理用)
+- ☐ 跳过 Docker (P4D master 不需要,装了也不冲突)
+- ⭐ **设静态 IP** (license IP-locked 时必须):路由器绑定 MAC 最简单,或者改 Ubuntu netplan
+
 ---
 
 ## Phase 1 — Ubuntu master 部署
