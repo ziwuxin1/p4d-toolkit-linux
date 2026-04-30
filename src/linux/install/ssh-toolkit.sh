@@ -682,9 +682,46 @@ step_one_click_restore() {
         chown -R "$P4D_USER:$P4D_USER" "$P4ROOT"
     fi
 
-    # 5. Apply checkpoint (auto-detect .gz)
-    info "Replay $latest_ckpt"
-    sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" -jr "$latest_ckpt"
+    # 5. Apply checkpoint (auto-detect .gz + auto-detect case mode)
+    #
+    # 核心坑(用户实际踩到):
+    # 从 Windows P4D(默认 -C1, case-insensitive)迁移到 Linux P4D(默认 -C0,
+    # case-sensitive)时,checkpoint 里"绑定"了 -C1 标记,replay 到默认 -C0
+    # 服务器会失败:"Case-handling mismatch: server uses Unix-style (-C0)
+    # but journal flags are Windows-style (-C1)!"
+    #
+    # case 模式只在 db 第一次创建时锁定。db.* 已删,这次 replay 就是创建,
+    # 必须按 checkpoint 的标记传 -C0 / -C1 / -C2。
+    #
+    # 检测方法:peek checkpoint 头部找 @case@ 字段
+    #   uncompressed: head -c 16K 里 grep
+    #   .gz:           zcat | head -c 16K
+    info "检测 checkpoint case 模式..."
+    local case_flag=""
+    local case_value=""
+    if [[ "$latest_ckpt" == *.gz ]]; then
+        case_value="$(zcat "$latest_ckpt" 2>/dev/null | head -c 16384 | grep -oE '@case@ @[0-9]+@' | head -1 | grep -oE '[0-9]+' || true)"
+    else
+        case_value="$(head -c 16384 "$latest_ckpt" 2>/dev/null | grep -oE '@case@ @[0-9]+@' | head -1 | grep -oE '[0-9]+' || true)"
+    fi
+    if [[ -n "$case_value" ]]; then
+        case_flag="-C${case_value}"
+        info "Checkpoint 声明 case 模式: $case_flag ($(case "$case_value" in
+            0) echo "Unix-style, case-sensitive" ;;
+            1) echo "Windows hybrid, case-insensitive 比较 + case-preserving 存储" ;;
+            2) echo "Windows pure case-insensitive" ;;
+            *) echo "未知" ;;
+        esac))"
+    else
+        warn "未检测到 case 模式声明 — 用 P4D 默认值(Linux 上是 -C0)"
+    fi
+
+    info "Replay $latest_ckpt $case_flag"
+    if [[ -n "$case_flag" ]]; then
+        sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" "$case_flag" -jr "$latest_ckpt"
+    else
+        sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" -jr "$latest_ckpt"
+    fi
 
     # 6. Apply journals in order
     for j in "${journals[@]}"; do
