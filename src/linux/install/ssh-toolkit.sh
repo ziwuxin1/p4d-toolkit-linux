@@ -415,7 +415,11 @@ Environment=P4PORT=$P4PORT
 Environment=P4JOURNAL=$P4ROOT/journal
 Environment=P4LOG=$P4ROOT/log
 ExecStart=$P4D_BIN -r $P4ROOT -p $P4PORT -d
-ExecStop=$P4_BIN -p $P4PORT admin stop
+# admin stop 需要 P4D super 用户身份,systemd 直接跑会用 perforce(Linux)用户名,
+# 而 P4D protect 表里 perforce 通常不是 super → "Access ... not enabled"。
+# 改用登录后的 admin ticket 调 stop,失败则用 SIGTERM 兜底。
+# - prefix: ExecStop 失败不算服务失败(systemd 仍会发 SIGTERM 收尾)
+ExecStop=-/bin/bash -c 'export P4TICKETS=/tmp/.p4tickets_admin; $P4_BIN -p $P4PORT -u admin login < $P4D_ADMIN_PASSWD_FILE >/dev/null 2>&1; $P4_BIN -p $P4PORT -u admin admin stop 2>/dev/null || pkill -TERM -u $P4D_USER -f "p4d -r $P4ROOT"'
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
