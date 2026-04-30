@@ -583,6 +583,25 @@ step_one_click_restore() {
         info "已取消"; return 0
     fi
 
+    # 检查 perforce 用户能不能读 SOURCE_DIR(默认 ROOT_TEMP=/root/P4_Temp/Root_Temp,
+    # /root 权限 700,perforce 进不去 → p4d -jr 会 Permission denied)。
+    # 不能读就自动 stage 到 BACKUP_DIR(/opt/perforce/backups,perforce 一定能读)。
+    if ! sudo -u "$P4D_USER" test -r "$SOURCE_DIR" 2>/dev/null; then
+        warn "perforce 用户读不到 $SOURCE_DIR (权限隔离),自动 stage 到 $BACKUP_DIR"
+        mkdir -p "$BACKUP_DIR"
+        # 拷贝 checkpoint / journal / md5 到 BACKUP_DIR
+        local stage_count=0
+        for f in "$SOURCE_DIR"/checkpoint.* "$SOURCE_DIR"/journal "$SOURCE_DIR"/journal.[0-9]*; do
+            [[ -f "$f" ]] || continue
+            cp -p "$f" "$BACKUP_DIR/"
+            stage_count=$((stage_count + 1))
+        done
+        chown -R "$P4D_USER:$P4D_USER" "$BACKUP_DIR"
+        ok "已 stage $stage_count 个文件到 $BACKUP_DIR"
+        SOURCE_DIR="$BACKUP_DIR"
+        info "  新来源目录: $SOURCE_DIR"
+    fi
+
     # 1. Find latest checkpoint
     local latest_ckpt latest_num
     latest_ckpt="$(ls -1 "$SOURCE_DIR"/checkpoint.* 2>/dev/null | grep -v '\.md5$' | grep -v '\.gz$' | sort -V | tail -1 || true)"
