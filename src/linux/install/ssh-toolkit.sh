@@ -494,15 +494,19 @@ step_setup_cron_checkpoint() {
 0 3 * * * $P4D_USER $P4D_BIN -r $P4ROOT -jc -Z -p $BACKUP_DIR/checkpoint > $BACKUP_DIR/last.log 2>&1
 
 # 03:30 — rsync 本地 checkpoint+journal 到 NAS (metadata 副本,几秒钟)
+# --no-owner --no-group --no-perms: NFS 多数都用 all_squash 压缩 UID,
+# rsync 想保留 owner/group/perms 会失败 chown "Operation not permitted",
+# 数据传过去了但退出码 23 让监控误判失败。这三个开关让 rsync 不尝试保留,
+# 落地到 NAS 用挂载的默认权限即可(灾备恢复时再 chown 回 perforce)。
 30 3 * * * root if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then \\
     mkdir -p $NAS_BACKUP_ROOT/checkpoints && \\
-    rsync -a --delete $BACKUP_DIR/ $NAS_BACKUP_ROOT/checkpoints/ > $NAS_BACKUP_ROOT/checkpoints/last-rsync.log 2>&1; \\
+    rsync -a --no-owner --no-group --no-perms --delete $BACKUP_DIR/ $NAS_BACKUP_ROOT/checkpoints/ > $NAS_BACKUP_ROOT/checkpoints/last-rsync.log 2>&1; \\
 fi
 
 # 04:00 — rsync depot 物理文件到 NAS (差量,跳过 db.*/journal/log)
 0 4 * * * root if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then \\
     mkdir -p $NAS_BACKUP_ROOT/depots && \\
-    rsync -a --delete --exclude='db.*' --exclude='journal*' --exclude='log*' $P4ROOT/ $NAS_BACKUP_ROOT/depots/ > $NAS_BACKUP_ROOT/depots/last-rsync.log 2>&1; \\
+    rsync -a --no-owner --no-group --no-perms --delete --exclude='db.*' --exclude='journal*' --exclude='log*' $P4ROOT/ $NAS_BACKUP_ROOT/depots/ > $NAS_BACKUP_ROOT/depots/last-rsync.log 2>&1; \\
 fi
 
 # 每周日 05:00 — 清理本地 14 天前的 checkpoint+journal(本地不留太久,NAS 那边长存)
@@ -972,13 +976,36 @@ step_run_rsync_now() {
     fi
     mkdir -p "$NAS_BACKUP_ROOT/checkpoints" "$NAS_BACKUP_ROOT/depots"
 
-    info "[1/2] rsync 本地 checkpoint+journal → $NAS_BACKUP_ROOT/checkpoints/"
-    rsync -av --delete "$BACKUP_DIR/" "$NAS_BACKUP_ROOT/checkpoints/" 2>&1 | tail -10
+    # NFS all_squash 会拒绝 rsync 保留 owner/group/perms,导致退出码 23,
+    # 数据传过去了但 errexit + pipefail 让脚本中途退出,[2/2] depot 没跑。
+    # --no-owner --no-group --no-perms 跳过这三个属性的保留。
+    # || true 兜底:即便 rsync 报其他无害错(部分文件被锁等),也继续走 [2/2]。
+    local rsync_opts="--archive --no-owner --no-group --no-perms --delete --human-readable"
 
-    info "[2/2] rsync depot 物理文件 → $NAS_BACKUP_ROOT/depots/"
-    rsync -av --delete --exclude='db.*' --exclude='journal*' --exclude='log*' \
+    info "[1/2] rsync 本地 checkpoint+journal → $NAS_BACKUP_ROOT/checkpoints/"
+    set +e
+    rsync $rsync_opts "$BACKUP_DIR/" "$NAS_BACKUP_ROOT/checkpoints/" 2>&1 | tail -10
+    local rc1=${PIPESTATUS[0]}
+    set -e
+    if (( rc1 != 0 )); then
+        warn "[1/2] rsync 退出码 $rc1 (常见: NFS squash 不允许 chown,数据本身已传)"
+    fi
+
+    info "[2/2] rsync depot 物理文件 → $NAS_BACKUP_ROOT/depots/ (这步耗时,首次推全量)"
+    set +e
+    rsync $rsync_opts --exclude='db.*' --exclude='journal*' --exclude='log*' \
         "$P4ROOT/" "$NAS_BACKUP_ROOT/depots/" 2>&1 | tail -10
-    ok "完成"
+    local rc2=${PIPESTATUS[0]}
+    set -e
+    if (( rc2 != 0 )); then
+        warn "[2/2] rsync 退出码 $rc2 (常见: NFS squash 不允许 chown,数据本身已传)"
+    fi
+
+    if (( rc1 == 0 && rc2 == 0 )); then
+        ok "完成"
+    else
+        ok "完成 (有非致命警告,数据已传 — 详见上面 rc 提示)"
+    fi
 }
 
 step_uninstall() {
