@@ -673,6 +673,13 @@ step_one_click_restore() {
 step_health_check() {
     section "🩺 健康体检"
 
+    # 健康体检本身只是"探测+报告",不应该让任何子命令的非 0 退出
+    # 把整个脚本带崩(否则全新机器还没装,体检就把菜单干掉了)。
+    # 用子 shell 包裹 + 局部关掉 errexit / pipefail。
+    (
+    set +e
+    set +o pipefail
+
     # Service
     local svc; svc="$(svc_state)"
     [[ "$svc" == "running" ]] && ok "服务: 运行中" || err "服务: $svc"
@@ -762,15 +769,21 @@ step_health_check() {
         fi
     fi
 
-    # Disk
-    local pct
-    pct="$(df -P "$P4ROOT" | awk 'NR==2 {print $5}' | tr -d '%')"
-    if (( pct > 90 )); then
-        err "P4ROOT 所在盘已用 ${pct}% (>90%,危险)"
-    elif (( pct > 75 )); then
-        warn "P4ROOT 所在盘已用 ${pct}%"
+    # Disk — P4ROOT 还没创建时优雅跳过(全新机器装之前的常见状态)
+    if [[ -d "$P4ROOT" ]]; then
+        local pct
+        pct="$(df -P "$P4ROOT" 2>/dev/null | awk 'NR==2 {print $5}' | tr -d '%')"
+        if [[ -z "$pct" ]]; then
+            warn "P4ROOT 磁盘使用率: 读取失败"
+        elif (( pct > 90 )); then
+            err "P4ROOT 所在盘已用 ${pct}% (>90%,危险)"
+        elif (( pct > 75 )); then
+            warn "P4ROOT 所在盘已用 ${pct}%"
+        else
+            ok "P4ROOT 所在盘已用 ${pct}%"
+        fi
     else
-        ok "P4ROOT 所在盘已用 ${pct}%"
+        info "P4ROOT 还未创建: $P4ROOT (新机器,先跑菜单 1 部署)"
     fi
 
     # Systemd journal recent errors
@@ -779,6 +792,9 @@ step_health_check() {
     if (( errors > 1 )); then
         warn "近 1h systemd journal 中有 $((errors - 1)) 条错误"
     fi
+
+    )  # 关闭健康体检子 shell — errexit/pipefail 自动恢复
+    return 0
 }
 
 step_show_backup_status() {
