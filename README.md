@@ -13,11 +13,14 @@
 
 ---
 
-## 📖 完整迁移指南
+## 📖 完整文档
 
-**第一次用?从这开始** → [docs/MIGRATION-GUIDE.md](docs/MIGRATION-GUIDE.md)
+| 文档 | 用途 |
+|------|------|
+| [📘 完整迁移指南](docs/MIGRATION-GUIDE.md) | **第一次用从这开始** — Windows P4D → Linux 全流程 |
+| [🚨 灾难恢复指南](docs/DISK-FAILURE-RECOVERY.md) | **系统盘损坏时怎么办** — 从 NAS 备份重建 |
 
-涵盖 Windows P4D → Linux 完整迁移流程、NAS 双副本备份配置、灾难恢复、踩过的所有坑。基于 1.13 TB 真实双 master 迁移实战。
+基于 1.13 TB 真实双 master 迁移 + 9 个 bug 修复实战。
 
 ---
 
