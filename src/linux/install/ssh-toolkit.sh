@@ -693,17 +693,29 @@ step_one_click_restore() {
     # case 模式只在 db 第一次创建时锁定。db.* 已删,这次 replay 就是创建,
     # 必须按 checkpoint 的标记传 -C0 / -C1 / -C2。
     #
-    # 检测方法:peek checkpoint 头部找 @case@ 字段
-    #   uncompressed: head -c 16K 里 grep
-    #   .gz:           zcat | head -c 16K
+    # 检测方法:peek checkpoint 找 @case@ 字段
+    #   小 checkpoint 通常在前 16KB
+    #   大 checkpoint(几百 MB)里 db.counters 之前可能有大量 db.config 等条目,
+    #   @case@ 可能在 1MB 之后 — 扩大到 64MB,失败则全文件 grep
     info "检测 checkpoint case 模式..."
     local case_flag=""
     local case_value=""
+    local probe_cmd
     if [[ "$latest_ckpt" == *.gz ]]; then
-        case_value="$(zcat "$latest_ckpt" 2>/dev/null | head -c 16384 | grep -oE '@case@ @[0-9]+@' | head -1 | grep -oE '[0-9]+' || true)"
+        probe_cmd="zcat \"$latest_ckpt\" 2>/dev/null"
     else
-        case_value="$(head -c 16384 "$latest_ckpt" 2>/dev/null | grep -oE '@case@ @[0-9]+@' | head -1 | grep -oE '[0-9]+' || true)"
+        probe_cmd="cat \"$latest_ckpt\" 2>/dev/null"
     fi
+
+    # 第 1 轮:前 64MB(覆盖 99% 的 checkpoint,通常秒级)
+    case_value="$(eval "$probe_cmd" | head -c 67108864 | grep -aoE '@case@ @[0-9]+@' | head -1 | grep -oE '[0-9]+' || true)"
+
+    # 第 2 轮:全文件 grep(慢但可靠,大 checkpoint 可能要 1-2 分钟)
+    if [[ -z "$case_value" ]]; then
+        warn "前 64MB 未检测到 @case@,扫描整个 checkpoint(可能需要 1-2 分钟)..."
+        case_value="$(eval "$probe_cmd" | grep -aoE '@case@ @[0-9]+@' | head -1 | grep -oE '[0-9]+' || true)"
+    fi
+
     if [[ -n "$case_value" ]]; then
         case_flag="-C${case_value}"
         info "Checkpoint 声明 case 模式: $case_flag ($(case "$case_value" in
@@ -717,10 +729,22 @@ step_one_click_restore() {
     fi
 
     info "Replay $latest_ckpt $case_flag"
+    local replay_rc=0
     if [[ -n "$case_flag" ]]; then
-        sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" "$case_flag" -jr "$latest_ckpt"
+        sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" "$case_flag" -jr "$latest_ckpt" || replay_rc=$?
     else
-        sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" -jr "$latest_ckpt"
+        sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" -jr "$latest_ckpt" 2>&1 | tee /tmp/p4d_replay_$$.log
+        replay_rc=${PIPESTATUS[0]}
+        # 自动从错误信息恢复:Case-handling mismatch 时自动加 -C1 重试
+        if (( replay_rc != 0 )) && grep -q 'Case-handling mismatch' /tmp/p4d_replay_$$.log; then
+            warn "撞到 Case-handling mismatch,自动 -C1 重试..."
+            find "$P4ROOT" -maxdepth 1 -name "db.*" -delete
+            sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" -C1 -jr "$latest_ckpt" && replay_rc=0
+        fi
+        rm -f /tmp/p4d_replay_$$.log
+    fi
+    if (( replay_rc != 0 )); then
+        die "checkpoint replay 失败(exit $replay_rc) — 查看 systemd 日志或手动跑 p4d -jr 看具体原因"
     fi
 
     # 6. Apply journals in order
