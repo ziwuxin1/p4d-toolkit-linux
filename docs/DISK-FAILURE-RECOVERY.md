@@ -68,53 +68,22 @@
 
 跟原来一样的版本:Ubuntu 22.04 LTS 或 24.04 LTS。
 
-直接看这两个视频(灾难时不要折腾文字步骤):
-
 | 视频 | 内容 |
 |------|------|
 | 📺 [PVE 9.0 系统安装与初始化全攻略](https://youtu.be/hzkM0bycv4A) | PVE 装好(如果是 PVE 上跑) |
 | 📺 [手把手 PVE 安装 Ubuntu Server 24,配置 SSH 登录+Docker 环境](https://youtu.be/xa5iCt0OY5w) | Ubuntu Server 24 + SSH |
 
-⚠️ 灾难恢复装机时几个特殊点:
-- 用户名跟原来一样(后面 chown 会方便些)
-- ☑ OpenSSH Server (远程管理)
-- 时区跟 NAS 一致
-- 跳过 Docker(不影响 P4D 但占空间)
-
-### 1.3 设静态 IP — license IP-locked 必须用原 IP
+### 1.3 IP 必须跟原来一致
 
 ⚠️ **关键**: 如果你的 license 是 IP-locked,**新机器必须用同一个 IP**! 否则 license 会拒绝。
 
-先在 NAS 上抢救老的 license 看看绑没绑 IP(灾难前抢救得到 license 文件就更好):
+可以从 NAS 上的备份里看 license 是否绑定 IP:
 ```bash
-# 老 master 还能开的话 / NAS 上有备份的话:
-cat /opt/perforce/servers/master/license | grep -i 'license-ip\|ip-mac'
+# NAS 备份里的 license 文件(如果你之前把 license 也备份进去了)
+cat /mnt/nas/p4d-backups/vm1/license 2>/dev/null | grep -i 'license-ip\|ip-mac' || echo "NAS 上没备份 license"
 ```
 
-设静态 IP 两种方式:
-
-**方式 A: 路由器 MAC 绑定** (最简单)
-- 进路由器面板 → DHCP → 把这台机器 MAC 绑定到原 IP
-- Ubuntu 那边不动配置
-
-**方式 B: Ubuntu netplan**
-```bash
-ip -4 addr show       # 看现在 IP 和网卡名
-sudo nano /etc/netplan/00-installer-config.yaml
-```
-```yaml
-network:
-  version: 2
-  ethernets:
-    ens18:                              # 网卡名根据你机器实际改
-      dhcp4: false
-      addresses: [192.168.1.51/24]      # 必须是原来 master 的 IP
-      routes:
-        - to: default
-          via: 192.168.1.1
-      nameservers:
-        addresses: [192.168.1.1, 8.8.8.8]
-```
+视频里讲了静态 IP 配置,跟着做就行。最简单的方式是去路由器把 MAC 绑定到原 IP。
 
 ```bash
 sudo netplan apply

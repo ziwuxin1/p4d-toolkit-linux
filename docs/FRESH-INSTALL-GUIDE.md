@@ -86,68 +86,12 @@
 
 ## Step 1 — 装 PVE + Ubuntu Server
 
-### 1.1 跟视频走
-
-直接看这两个视频,跟着做完就行,文字说明意义不大:
+直接看这两个视频,跟着做完就行:
 
 | 视频 | 内容 |
 |------|------|
 | 📺 [PVE 9.0 系统安装与初始化全攻略](https://youtu.be/hzkM0bycv4A) | PVE 虚拟化平台装好(物理机 → PVE) |
 | 📺 [手把手 PVE 安装 Ubuntu Server 24,配置 SSH 登录+Docker 环境](https://youtu.be/xa5iCt0OY5w) | 在 PVE 上开 Ubuntu Server 24 + SSH |
-
-### 1.2 装 P4D master 时的几个特殊注意点
-
-跟视频走完之后,**装 P4D 之前**确认这几件事:
-
-#### ⭐ 用户名
-- 建议: `ubuntu` 或你个人名
-- ❌ **不要用 `perforce`** (toolkit 会自动建 perforce 系统用户,会冲突)
-
-#### ⭐ 静态 IP (重要)
-P4D license 如果是 IP-locked,**新装机器必须用固定 IP**:
-
-```bash
-# 看现在 IP
-ip -4 addr show
-```
-
-设静态 IP 两种方式选一种:
-
-**方式 A: 在路由器里绑定 MAC** (推荐,最简单)
-- 进路由器管理面板 → DHCP → 静态 IP 分配
-- 把这台机器的 MAC 绑定到固定 IP
-- Ubuntu 那边不用动配置
-
-**方式 B: 改 Ubuntu netplan**
-```bash
-sudo nano /etc/netplan/00-installer-config.yaml
-```
-```yaml
-network:
-  version: 2
-  ethernets:
-    enp0s3:                              # 你的网卡名,可能是 ens18 / eth0
-      dhcp4: false
-      addresses: [192.168.1.51/24]       # 你想要的 IP
-      routes:
-        - to: default
-          via: 192.168.1.1               # 你的网关
-      nameservers:
-        addresses: [192.168.1.1, 8.8.8.8]
-```
-```bash
-sudo netplan apply
-ip -4 addr show | grep inet
-```
-
-#### ⭐ 装完更新一下
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl wget git
-```
-
-#### ⭐ 跳过 Docker 等
-视频里讲了 Docker 安装,**P4D master 不需要 Docker**,可以跳过。如果已经装了也没事,不冲突,只是多占点空间。
 
 ---
 
