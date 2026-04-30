@@ -186,8 +186,16 @@ EOF
 # ============================================================
 
 svc_state() {
-    # echoes one of: running|stopped|missing|unknown
-    if ! systemctl list-unit-files --type=service 2>/dev/null | grep -q "^${SVC_NAME}"; then
+    # echoes one of: running|stopped|failed|missing|unknown
+    #
+    # 之前用 systemctl list-unit-files | grep "^${SVC_NAME}" 检测,
+    # 在某些 systemd 版本上输出格式不同(比如有 leading whitespace,
+    # 或 pager 介入,或多列对齐填充),grep 匹配不上 → 返回 missing,
+    # 即使 service 实际在跑。结果 banner 永远显示"未安装",
+    # 与下面健康体检的真实状态(运行中)矛盾,用户体验糟糕。
+    #
+    # 改用更可靠的检测:直接看 unit file 是否存在 + systemctl cat 兜底。
+    if [[ ! -f "$SVC_FILE" ]] && ! systemctl cat "$SVC_NAME" >/dev/null 2>&1; then
         echo "missing"; return
     fi
     if systemctl is-active --quiet "$SVC_NAME"; then
