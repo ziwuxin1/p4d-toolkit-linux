@@ -13,6 +13,14 @@
 
 ---
 
+## 📖 完整迁移指南
+
+**第一次用?从这开始** → [docs/MIGRATION-GUIDE.md](docs/MIGRATION-GUIDE.md)
+
+涵盖 Windows P4D → Linux 完整迁移流程、NAS 双副本备份配置、灾难恢复、踩过的所有坑。基于 1.13 TB 真实双 master 迁移实战。
+
+---
+
 ## Quick start / 快速开始
 
 ```bash
