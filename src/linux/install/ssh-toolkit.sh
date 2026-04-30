@@ -594,16 +594,36 @@ step_one_click_restore() {
     latest_num="$(basename "$latest_ckpt" | sed -E 's/^checkpoint\.([0-9]+).*/\1/')"
     info "最新 checkpoint: $latest_ckpt (#$latest_num)"
 
-    # 2. Find journals N >= latest_num
+    # 2. Find journals N >= latest_num,按编号排序后再追加无后缀的 live journal
+    #
+    # 命名约定:
+    #   journal.N         — 已轮转的旧 journal(checkpoint 时被 p4d -jc 改名生成)
+    #   journal           — 当前活跃 live journal,包含最新 checkpoint 之后的所有变更
+    #
+    # 之前只匹配 journal.[0-9]* 会漏掉 live journal,导致从 master 拷过来的最新变更
+    # 全部丢失(用户场景:Root_Temp 里只有 checkpoint.149 + journal,如果不拾起 journal,
+    # 149 之后的提交就回不来)。修复:先收编号 journal,排序后追加无编号的 live journal。
     local journals=()
-    for f in "$SOURCE_DIR"/journal.[0-9]*; do
+    local sorted_numbered=()
+    while IFS= read -r f; do
         [[ -e "$f" ]] || continue
+        sorted_numbered+=("$f")
+    done < <(ls -1 "$SOURCE_DIR"/journal.[0-9]* 2>/dev/null | sort -V)
+
+    for f in "${sorted_numbered[@]}"; do
         local n
         n="$(basename "$f" | sed -E 's/^journal\.([0-9]+).*/\1/')"
         if (( n >= latest_num )); then
             journals+=("$f")
         fi
     done
+
+    # 追加无后缀 live journal(必须最后 replay,因为它包含最新变更)
+    if [[ -f "$SOURCE_DIR/journal" ]]; then
+        info "检测到 live journal: $SOURCE_DIR/journal (最后 replay)"
+        journals+=("$SOURCE_DIR/journal")
+    fi
+
     info "需要 replay 的 journal 数: ${#journals[@]}"
 
     # 镜像 depot 物理文件(若 SOURCE_DIR 包含 depot 子目录)
