@@ -427,28 +427,41 @@ EOF
 
     # Drop-in: ExecStartPre = reset counter to 0; ExecStartPost = set counter = MAX+1
     # Mirrors migration guide Phase 2.4 verbatim — the "vaccine" for 坑 #1.
+    #
+    # 注意: heredoc 用 <<'EOF' (literal mode) 避免 inner shell 的 $MAX_CHANGE / $NEXT /
+    # $(...) / $2 被外层 bash 错误展开。配置值用 __PLACEHOLDER__ 占位,生成后再 sed 替换。
+    # 这样 P4PORT / P4ROOT 真的可以自定义,不再硬编码 1888 + master 路径。
     info "写自愈 hook ${RESCUE_DROPIN_FILE}"
     mkdir -p "$RESCUE_DROPIN_DIR"
     cat > "$RESCUE_DROPIN_FILE" <<'EOF'
 [Service]
 # Pre-start: reset counter=0 so license validation passes
-ExecStartPre=/bin/bash -c 'echo "@pv@ 1 @db.counters@ @change@ @0@" > /tmp/p4_rescue.jnl && /opt/perforce/sbin/p4d -r /opt/perforce/servers/master -jr /tmp/p4_rescue.jnl'
+ExecStartPre=/bin/bash -c 'echo "@pv@ 1 @db.counters@ @change@ @0@" > /tmp/p4_rescue.jnl && __P4D_BIN__ -r __P4ROOT__ -jr /tmp/p4_rescue.jnl'
 
 # Post-start: dynamic MAX(change) → counter=MAX+1
 # (- prefix: failure here doesn't fail the unit)
 ExecStartPost=-/bin/bash -c '\
 export P4TICKETS=/tmp/.p4tickets_admin; \
 sleep 5; \
-/opt/perforce/bin/p4 -p localhost:1888 -u admin login < /opt/perforce/.p4_admin_passwd 2>&1 | tee /tmp/p4_post.log; \
-MAX_CHANGE=$(/opt/perforce/bin/p4 -p localhost:1888 -u admin changes -m 1 2>/dev/null | awk "{print \$2}"); \
+__P4_BIN__ -p localhost:__P4PORT__ -u admin login < __P4D_ADMIN_PASSWD_FILE__ 2>&1 | tee /tmp/p4_post.log; \
+MAX_CHANGE=$(__P4_BIN__ -p localhost:__P4PORT__ -u admin changes -m 1 2>/dev/null | awk "{print \$2}"); \
 if [ -n "$MAX_CHANGE" ] && [ "$MAX_CHANGE" -gt 0 ] 2>/dev/null; then \
     NEXT=$((MAX_CHANGE + 1)); \
-    /opt/perforce/bin/p4 -p localhost:1888 -u admin counter -f change $NEXT 2>&1 | tee -a /tmp/p4_post.log; \
+    __P4_BIN__ -p localhost:__P4PORT__ -u admin counter -f change $NEXT 2>&1 | tee -a /tmp/p4_post.log; \
     echo "Counter set to $NEXT (based on max change $MAX_CHANGE)" | tee -a /tmp/p4_post.log; \
 else \
     echo "No existing changes found, counter stays at 0" | tee -a /tmp/p4_post.log; \
 fi'
 EOF
+
+    # 用配置值替换占位符 — 至此 P4PORT / P4ROOT / 二进制路径 / 密码文件 全部可自定义
+    sed -i \
+        -e "s|__P4D_BIN__|${P4D_BIN}|g" \
+        -e "s|__P4_BIN__|${P4_BIN}|g" \
+        -e "s|__P4ROOT__|${P4ROOT}|g" \
+        -e "s|__P4PORT__|${P4PORT}|g" \
+        -e "s|__P4D_ADMIN_PASSWD_FILE__|${P4D_ADMIN_PASSWD_FILE}|g" \
+        "$RESCUE_DROPIN_FILE"
 
     systemctl daemon-reload
     systemctl enable "$SVC_NAME"
