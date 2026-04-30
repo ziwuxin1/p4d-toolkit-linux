@@ -15,12 +15,13 @@
 
 ## 📖 完整文档
 
-| 文档 | 用途 |
+| 场景 | 文档 |
 |------|------|
-| [📘 完整迁移指南](docs/MIGRATION-GUIDE.md) | **第一次用从这开始** — Windows P4D → Linux 全流程 |
-| [🚨 灾难恢复指南](docs/DISK-FAILURE-RECOVERY.md) | **系统盘损坏时怎么办** — 从 NAS 备份重建 |
+| 🆕 **第一次装 P4D** (没有现成的) | [全新安装指南](docs/FRESH-INSTALL-GUIDE.md) |
+| 🔄 **从 Windows P4D 迁移** | [完整迁移指南](docs/MIGRATION-GUIDE.md) |
+| 🚨 **系统盘损坏要恢复** | [灾难恢复指南](docs/DISK-FAILURE-RECOVERY.md) |
 
-基于 1.13 TB 真实双 master 迁移 + 9 个 bug 修复实战。
+基于 1.13 TB 真实双 master 迁移 + 10 个 bug 修复实战。
 
 ---
 
