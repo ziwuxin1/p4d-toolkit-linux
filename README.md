@@ -17,8 +17,8 @@
 
 | 场景 | 文档 |
 |------|------|
-| 🆕 **第一次装 P4D** (没有现成的) | [全新安装指南](docs/FRESH-INSTALL-GUIDE.md) |
-| 🔄 **从 Windows P4D 迁移** | [完整迁移指南](docs/MIGRATION-GUIDE.md) |
+| 🆕 **第一次安装** (没有现成的) | [全新安装指南](docs/FRESH-INSTALL-GUIDE.md) |
+| 🔄 **从 Windows 迁移** | [完整迁移指南](docs/MIGRATION-GUIDE.md) |
 | 🚨 **系统盘损坏要恢复** | [灾难恢复指南](docs/DISK-FAILURE-RECOVERY.md) |
 
 基于 1.13 TB 真实双 master 迁移 + 10 个 bug 修复实战。
