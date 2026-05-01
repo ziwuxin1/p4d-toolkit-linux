@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # SSH Toolkit (Linux) — Perforce P4D 一键运维脚本
-# Version: 1.0.0
+# Version: 1.1.0
 # Target: P4D 2024.1 on Ubuntu 22.04 / 24.04
 #
 # 用法:
@@ -19,6 +19,12 @@
 set -o errexit
 set -o nounset
 set -o pipefail
+
+# ============================================================
+#  Toolkit 版本(每次 commit 自动 +1,见 .githooks/pre-commit)
+# ============================================================
+
+readonly TOOLKIT_VERSION="1.1.1"
 
 # ============================================================
 #  配置(可通过环境变量 / 配置文件覆盖)
@@ -258,7 +264,7 @@ print_header() {
     fi
 
     printf "${C_BOLD}${C_CYAN}╔══════════════════════════════════════════════════════════════╗${C_RESET}\n"
-    printf "${C_BOLD}${C_CYAN}║${C_RESET}  ${C_BOLD}P4D Toolkit (Ubuntu)${C_RESET}                                      ${C_BOLD}${C_CYAN}║${C_RESET}\n"
+    printf "${C_BOLD}${C_CYAN}║${C_RESET}  ${C_BOLD}P4D Toolkit (Ubuntu)${C_RESET}  ${C_DIM}v${TOOLKIT_VERSION}${C_RESET}$(printf '%*s' $((40 - ${#TOOLKIT_VERSION})) '')${C_BOLD}${C_CYAN}║${C_RESET}\n"
     printf "${C_BOLD}${C_CYAN}║${C_RESET}  Host: $(printf '%-25s' "$(hostname)")  Port: $(printf '%-5s' "$P4PORT")          ${C_BOLD}${C_CYAN}║${C_RESET}\n"
     printf "${C_BOLD}${C_CYAN}║${C_RESET}  P4D:  $(printf '%-30s' "$(p4d_version_string | head -c 30)")          ${C_BOLD}${C_CYAN}║${C_RESET}\n"
     printf "${C_BOLD}${C_CYAN}║${C_RESET}  Service: ${svc_color}$(printf '%-15s' "$svc_text")${C_RESET}                                ${C_BOLD}${C_CYAN}║${C_RESET}\n"
