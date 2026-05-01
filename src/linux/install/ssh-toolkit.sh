@@ -506,7 +506,7 @@ fi
 # 04:00 — rsync depot 物理文件到 NAS (差量,跳过 db.*/journal/log)
 0 4 * * * root if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then \\
     mkdir -p $NAS_BACKUP_ROOT/depots && \\
-    rsync -a --no-owner --no-group --no-perms --delete --exclude='db.*' --exclude='journal*' --exclude='log*' $P4ROOT/ $NAS_BACKUP_ROOT/depots/ > $NAS_BACKUP_ROOT/depots/last-rsync.log 2>&1; \\
+    rsync -a --no-owner --no-group --no-perms --delete --exclude='db.*' --exclude='journal*' --exclude='log*' --exclude='checkpoint.*' $P4ROOT/ $NAS_BACKUP_ROOT/depots/ > $NAS_BACKUP_ROOT/depots/last-rsync.log 2>&1; \\
 fi
 
 # 每周日 05:00 — 清理本地 14 天前的 checkpoint+journal(本地不留太久,NAS 那边长存)
@@ -955,6 +955,21 @@ step_show_backup_status() {
         info "  NAS depot 目录大小: $(du -sh "$NAS_BACKUP_ROOT/depots" 2>/dev/null | cut -f1)"
         ls -lh "$NAS_BACKUP_ROOT/depots" 2>/dev/null | head -10
     fi
+
+    # 漂移检测:P4ROOT 里如果出现 checkpoint.* / journal.[0-9]*,
+    # 说明有命令没带 -p 前缀(裸 p4d -jc 或老脚本),会被 depot rsync 扫到
+    # NAS depots/ 里造成"checkpoint 跑错目录",并让 monitor 误以为本地 backup 没更新。
+    local stray_ckpt stray_jnl
+    stray_ckpt="$(ls "$P4ROOT"/checkpoint.* 2>/dev/null | grep -v '\.migrated$' || true)"
+    stray_jnl="$(ls "$P4ROOT"/journal.[0-9]* 2>/dev/null | grep -v '\.migrated$' || true)"
+    if [[ -n "$stray_ckpt$stray_jnl" ]]; then
+        echo
+        warn "⚠️  P4ROOT 里检测到漂移文件(应该在 $BACKUP_DIR):"
+        [[ -n "$stray_ckpt" ]] && echo "$stray_ckpt"
+        [[ -n "$stray_jnl"  ]] && echo "$stray_jnl"
+        info "修复:sudo mv $P4ROOT/{checkpoint.*,journal.[0-9]*} $BACKUP_DIR/ && sudo chown $P4D_USER:$P4D_USER $BACKUP_DIR/{checkpoint.*,journal.*}"
+        info "然后重跑选项 14(rsync 到 NAS)"
+    fi
 }
 
 step_view_journal() {
@@ -993,7 +1008,7 @@ step_run_rsync_now() {
 
     info "[2/2] rsync depot 物理文件 → $NAS_BACKUP_ROOT/depots/ (这步耗时,首次推全量)"
     set +e
-    rsync $rsync_opts --exclude='db.*' --exclude='journal*' --exclude='log*' \
+    rsync $rsync_opts --exclude='db.*' --exclude='journal*' --exclude='log*' --exclude='checkpoint.*' \
         "$P4ROOT/" "$NAS_BACKUP_ROOT/depots/" 2>&1 | tail -10
     local rc2=${PIPESTATUS[0]}
     set -e
