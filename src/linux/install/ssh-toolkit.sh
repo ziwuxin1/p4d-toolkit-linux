@@ -24,7 +24,7 @@ set -o pipefail
 #  Toolkit 版本(每次 commit 自动 +1,见 .githooks/pre-commit)
 # ============================================================
 
-readonly TOOLKIT_VERSION="1.1.3"
+readonly TOOLKIT_VERSION="1.1.4"
 
 # ============================================================
 #  配置(可通过环境变量 / 配置文件覆盖)
@@ -542,26 +542,29 @@ step_setup_cron_checkpoint() {
 # rsync/find 命令一律用 'bash -c "..."' 包成单行;改这里之前请保持单行格式,
 # 否则整个文件会被 cron 静默拒绝 (Error: bad minute, file ignored)。
 
+# 时间用美西时区(夏令时切换自动跟进,不需要每年手动改)
+CRON_TZ=America/Los_Angeles
+
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# 03:00 — 生成 checkpoint 到本地 SSD (压缩 + 轮转 journal)
+# 03:00 (美西) — 生成 checkpoint 到本地 SSD (压缩 + 轮转 journal)
 0 3 * * * $P4D_USER $P4D_BIN -r $P4ROOT -jc -Z $BACKUP_DIR/checkpoint > $BACKUP_DIR/last.log 2>&1
 
-# 03:30 — rsync 本地 checkpoint+journal 到 NAS (metadata 副本,几秒钟)
+# 03:30 (美西) — rsync 本地 checkpoint+journal 到 NAS (metadata 副本,几秒钟)
 # --no-owner --no-group --no-perms: NFS 多数 all_squash 会压缩 UID,
 # 否则 rsync 保留 owner/group/perms 会 chown "Operation not permitted"
 # 退出码 23 让监控误判;数据其实传到了。
 30 3 * * * root bash -c 'if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then mkdir -p $NAS_BACKUP_ROOT/checkpoints && rsync -a --no-owner --no-group --no-perms --delete $BACKUP_DIR/ $NAS_BACKUP_ROOT/checkpoints/ > $NAS_BACKUP_ROOT/checkpoints/last-rsync.log 2>&1; fi'
 
-# 04:00 — rsync depot 物理文件到 NAS (差量,跳过 db.*/journal/log/checkpoint.*)
+# 04:00 (美西) — rsync depot 物理文件到 NAS (差量,跳过 db.*/journal/log/checkpoint.*)
 0 4 * * * root bash -c 'if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then mkdir -p $NAS_BACKUP_ROOT/depots && rsync -a --no-owner --no-group --no-perms --delete --exclude=db.* --exclude=journal* --exclude=log* --exclude=checkpoint.* $P4ROOT/ $NAS_BACKUP_ROOT/depots/ > $NAS_BACKUP_ROOT/depots/last-rsync.log 2>&1; fi'
 
-# 每周日 05:00 — 清理本地 14 天前的 checkpoint+journal (本地不留太久,NAS 长存)
+# 每周日 05:00 (美西) — 清理本地 14 天前的 checkpoint+journal (本地不留太久,NAS 长存)
 0 5 * * 0 $P4D_USER find $BACKUP_DIR -name 'checkpoint.*' -mtime +14 -delete
 0 5 * * 0 $P4D_USER find $BACKUP_DIR -name 'journal.*' -mtime +14 -delete
 
-# 每周日 06:00 — 清理 NAS 上 90 天前的 checkpoint+journal
+# 每周日 06:00 (美西) — 清理 NAS 上 90 天前的 checkpoint+journal
 0 6 * * 0 root bash -c '[[ -d $NAS_BACKUP_ROOT/checkpoints ]] && find $NAS_BACKUP_ROOT/checkpoints -name "checkpoint.*" -mtime +90 -delete'
 0 6 * * 0 root bash -c '[[ -d $NAS_BACKUP_ROOT/checkpoints ]] && find $NAS_BACKUP_ROOT/checkpoints -name "journal.*" -mtime +90 -delete'
 EOF
@@ -1128,7 +1131,7 @@ main_menu() {
   1) 全新安装 P4D ${P4D_VERSION}
   2) 安装 license 文件
   3) 配置 systemd 服务 + 启动自愈 hook
-  4) 配置每日 03:00 checkpoint cron 备份
+  4) 配置每日 03:00 (美西) checkpoint cron 备份
   5) 一次性全部部署 (0→1→2→3→4)
 
   ${C_BOLD}── 救援 ──${C_RESET}
