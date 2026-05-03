@@ -24,7 +24,7 @@ set -o pipefail
 #  Toolkit 版本(每次 commit 自动 +1,见 .githooks/pre-commit)
 # ============================================================
 
-readonly TOOLKIT_VERSION="1.1.2"
+readonly TOOLKIT_VERSION="1.1.3"
 
 # ============================================================
 #  配置(可通过环境变量 / 配置文件覆盖)
@@ -546,7 +546,7 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 03:00 — 生成 checkpoint 到本地 SSD (压缩 + 轮转 journal)
-0 3 * * * $P4D_USER $P4D_BIN -r $P4ROOT -jc -Z -p $BACKUP_DIR/checkpoint > $BACKUP_DIR/last.log 2>&1
+0 3 * * * $P4D_USER $P4D_BIN -r $P4ROOT -jc -Z $BACKUP_DIR/checkpoint > $BACKUP_DIR/last.log 2>&1
 
 # 03:30 — rsync 本地 checkpoint+journal 到 NAS (metadata 副本,几秒钟)
 # --no-owner --no-group --no-perms: NFS 多数 all_squash 会压缩 UID,
@@ -1022,8 +1022,10 @@ step_show_backup_status() {
     fi
 
     # 漂移检测:P4ROOT 里如果出现 checkpoint.* / journal.[0-9]*,
-    # 说明有命令没带 -p 前缀(裸 p4d -jc 或老脚本),会被 depot rsync 扫到
-    # NAS depots/ 里造成"checkpoint 跑错目录",并让 monitor 误以为本地 backup 没更新。
+    # 说明 checkpoint 没指定输出 PREFIX(裸 p4d -jc 或用了错误的 -p 标志 —
+    # p4d 的 -p 是 port 参数不是 prefix,正确写法是末尾位置参数 PREFIX)。
+    # 漂移文件会被 depot rsync 扫到 NAS depots/ 里造成"checkpoint 跑错目录",
+    # 并让 monitor 误以为本地 backup 没更新。
     local stray_ckpt stray_jnl
     stray_ckpt="$(ls "$P4ROOT"/checkpoint.* 2>/dev/null | grep -v '\.migrated$' || true)"
     stray_jnl="$(ls "$P4ROOT"/journal.[0-9]* 2>/dev/null | grep -v '\.migrated$' || true)"
@@ -1044,7 +1046,7 @@ step_view_journal() {
 
 step_run_checkpoint_now() {
     section "立刻生成一个 checkpoint"
-    sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" -jc -Z -p "$BACKUP_DIR/checkpoint"
+    sudo -u "$P4D_USER" "$P4D_BIN" -r "$P4ROOT" -jc -Z "$BACKUP_DIR/checkpoint"
     ok "完成"
     ls -lht "$BACKUP_DIR" | head -5
 }
