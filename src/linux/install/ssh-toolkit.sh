@@ -24,7 +24,7 @@ set -o pipefail
 #  Toolkit 版本(每次 commit 自动 +1,见 .githooks/pre-commit)
 # ============================================================
 
-readonly TOOLKIT_VERSION="1.1.1"
+readonly TOOLKIT_VERSION="1.1.2"
 
 # ============================================================
 #  配置(可通过环境变量 / 配置文件覆盖)
@@ -487,46 +487,105 @@ EOF
     info "现在可以: systemctl start $SVC_NAME"
 }
 
+# 校验 /etc/cron.d/ 文件格式 — 失败抛错让上游回滚。
+#   Vixie cron 不支持 \ 续行,以前这里写了多行 cron 整个文件被静默拒绝
+#   (Error: bad minute, file ignored),备份没跑、监控告警、但用户只在
+#   30 小时后才发现。改完一定要验证,不验证就不算修。
+_validate_cron_d_file() {
+    local f="$1" line lineno=0 first
+    [[ -r "$f" ]] || { err "cron 文件不可读: $f"; return 1; }
+    while IFS= read -r line; do
+        ((lineno++))
+        # 空行或注释跳过
+        [[ -z "${line//[[:space:]]/}" || "$line" =~ ^[[:space:]]*# ]] && continue
+        # 环境变量行跳过 (NAME=VALUE)
+        [[ "$line" =~ ^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*= ]] && continue
+        # 行尾不能是续行 \  ← 这次坑就是这个
+        if [[ "$line" =~ \\$ ]]; then
+            err "cron 文件第 $lineno 行用了 \\ 续行 (Vixie cron 不支持)"
+            err "  $line"
+            return 1
+        fi
+        # /etc/cron.d/ 格式: min hour day mon dow USER cmd…  ≥ 7 字段
+        # 用 set -f 关掉 glob,否则 cron 时间字段里的 * 会被展开成 cwd 下的文件名
+        # shellcheck disable=SC2086
+        set -f
+        set -- $line
+        set +f
+        if (( $# < 7 )); then
+            err "cron 文件第 $lineno 行字段不足 7 个: $line"
+            return 1
+        fi
+        # 头 5 个字段必须是 cron 时间字段(只允许数字 * / - , 这些字符)
+        for first in "$1" "$2" "$3" "$4" "$5"; do
+            if [[ ! "$first" =~ ^[0-9*/,\-]+$ ]]; then
+                err "cron 文件第 $lineno 行时间字段非法 ($first): $line"
+                return 1
+            fi
+        done
+    done < "$f"
+    return 0
+}
+
 step_setup_cron_checkpoint() {
     section "配置每日 checkpoint cron(方案 2:本地 + NAS 双副本)"
     mkdir -p "$BACKUP_DIR"
     chown "$P4D_USER:$P4D_USER" "$BACKUP_DIR"
 
-    cat > "$CRON_FILE" <<EOF
+    # 先写到 .new 临时文件,校验通过再 mv 到位 — 校验失败保留旧 cron 不变
+    local cron_new="${CRON_FILE}.new"
+    cat > "$cron_new" <<EOF
 # P4D Toolkit — auto-generated $(date -Iseconds)
 # 方案 2:checkpoint 先写本地 SSD,再 rsync 推到 NAS,depot 文件直接 rsync 到 NAS
+#
+# ⚠️ 注意: Vixie cron (Ubuntu 默认) 不支持 \\ 续行,/etc/cron.d/ 里的多行
+# rsync/find 命令一律用 'bash -c "..."' 包成单行;改这里之前请保持单行格式,
+# 否则整个文件会被 cron 静默拒绝 (Error: bad minute, file ignored)。
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 03:00 — 生成 checkpoint 到本地 SSD (压缩 + 轮转 journal)
 0 3 * * * $P4D_USER $P4D_BIN -r $P4ROOT -jc -Z -p $BACKUP_DIR/checkpoint > $BACKUP_DIR/last.log 2>&1
 
 # 03:30 — rsync 本地 checkpoint+journal 到 NAS (metadata 副本,几秒钟)
-# --no-owner --no-group --no-perms: NFS 多数都用 all_squash 压缩 UID,
-# rsync 想保留 owner/group/perms 会失败 chown "Operation not permitted",
-# 数据传过去了但退出码 23 让监控误判失败。这三个开关让 rsync 不尝试保留,
-# 落地到 NAS 用挂载的默认权限即可(灾备恢复时再 chown 回 perforce)。
-30 3 * * * root if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then \\
-    mkdir -p $NAS_BACKUP_ROOT/checkpoints && \\
-    rsync -a --no-owner --no-group --no-perms --delete $BACKUP_DIR/ $NAS_BACKUP_ROOT/checkpoints/ > $NAS_BACKUP_ROOT/checkpoints/last-rsync.log 2>&1; \\
-fi
+# --no-owner --no-group --no-perms: NFS 多数 all_squash 会压缩 UID,
+# 否则 rsync 保留 owner/group/perms 会 chown "Operation not permitted"
+# 退出码 23 让监控误判;数据其实传到了。
+30 3 * * * root bash -c 'if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then mkdir -p $NAS_BACKUP_ROOT/checkpoints && rsync -a --no-owner --no-group --no-perms --delete $BACKUP_DIR/ $NAS_BACKUP_ROOT/checkpoints/ > $NAS_BACKUP_ROOT/checkpoints/last-rsync.log 2>&1; fi'
 
-# 04:00 — rsync depot 物理文件到 NAS (差量,跳过 db.*/journal/log)
-0 4 * * * root if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then \\
-    mkdir -p $NAS_BACKUP_ROOT/depots && \\
-    rsync -a --no-owner --no-group --no-perms --delete --exclude='db.*' --exclude='journal*' --exclude='log*' --exclude='checkpoint.*' $P4ROOT/ $NAS_BACKUP_ROOT/depots/ > $NAS_BACKUP_ROOT/depots/last-rsync.log 2>&1; \\
-fi
+# 04:00 — rsync depot 物理文件到 NAS (差量,跳过 db.*/journal/log/checkpoint.*)
+0 4 * * * root bash -c 'if mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null || [[ -d "$NAS_BACKUP_ROOT" ]]; then mkdir -p $NAS_BACKUP_ROOT/depots && rsync -a --no-owner --no-group --no-perms --delete --exclude=db.* --exclude=journal* --exclude=log* --exclude=checkpoint.* $P4ROOT/ $NAS_BACKUP_ROOT/depots/ > $NAS_BACKUP_ROOT/depots/last-rsync.log 2>&1; fi'
 
-# 每周日 05:00 — 清理本地 14 天前的 checkpoint+journal(本地不留太久,NAS 那边长存)
-0 5 * * 0 $P4D_USER find $BACKUP_DIR -name "checkpoint.*" -mtime +14 -delete
-0 5 * * 0 $P4D_USER find $BACKUP_DIR -name "journal.*"    -mtime +14 -delete
+# 每周日 05:00 — 清理本地 14 天前的 checkpoint+journal (本地不留太久,NAS 长存)
+0 5 * * 0 $P4D_USER find $BACKUP_DIR -name 'checkpoint.*' -mtime +14 -delete
+0 5 * * 0 $P4D_USER find $BACKUP_DIR -name 'journal.*' -mtime +14 -delete
 
 # 每周日 06:00 — 清理 NAS 上 90 天前的 checkpoint+journal
-0 6 * * 0 root [[ -d $NAS_BACKUP_ROOT/checkpoints ]] && find $NAS_BACKUP_ROOT/checkpoints -name "checkpoint.*" -mtime +90 -delete
-0 6 * * 0 root [[ -d $NAS_BACKUP_ROOT/checkpoints ]] && find $NAS_BACKUP_ROOT/checkpoints -name "journal.*"    -mtime +90 -delete
+0 6 * * 0 root bash -c '[[ -d $NAS_BACKUP_ROOT/checkpoints ]] && find $NAS_BACKUP_ROOT/checkpoints -name "checkpoint.*" -mtime +90 -delete'
+0 6 * * 0 root bash -c '[[ -d $NAS_BACKUP_ROOT/checkpoints ]] && find $NAS_BACKUP_ROOT/checkpoints -name "journal.*" -mtime +90 -delete'
 EOF
-    chmod 644 "$CRON_FILE"
-    ok "cron 已配置: $CRON_FILE"
+
+    if ! _validate_cron_d_file "$cron_new"; then
+        err "新 cron 文件语法校验失败,保留旧 cron 不变"
+        err "失败的内容在: $cron_new (你可以手动 diff 看)"
+        return 1
+    fi
+
+    chmod 644 "$cron_new"
+    mv -f "$cron_new" "$CRON_FILE"
+    ok "cron 已配置: $CRON_FILE (语法校验通过)"
     info "本地 checkpoint: $BACKUP_DIR (保留 14 天)"
     info "NAS 备份根目录: $NAS_BACKUP_ROOT (保留 90 天)"
+
+    # cron 守护进程会在 1 分钟内自动 reload /etc/cron.d/,这里看一眼日志确认没报错
+    info "等 5 秒看 cron 是否拒绝新文件..."
+    sleep 5
+    if journalctl -u cron --since "10 seconds ago" --no-pager 2>/dev/null | grep -qE "p4d-backup.*ERROR|bad minute|bad hour"; then
+        err "cron 拒绝了新文件 (journalctl -u cron 看详细)"
+        return 1
+    fi
+
     if ! mountpoint -q "$NAS_BACKUP_ROOT" 2>/dev/null; then
         warn "$NAS_BACKUP_ROOT 没挂载 — rsync 那两条 cron 会跳过 (有 mountpoint 检查)"
         info "记得配 NFS 挂载,把 NAS 共享挂到 $NAS_BACKUP_ROOT"
